@@ -1,0 +1,103 @@
+#https://github.com/skylvr1289/sample_kafka
+version: '2'
+services:
+# Zookeeper, single node
+  zookeeper:
+    image: wurstmeister/zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - 2181:2181
+      - 2888:2888
+      - 3888:3888
+
+ # kafka single node     
+  kafka1:
+    image: wurstmeister/kafka:latest
+    restart: "no"
+    links:
+      - zookeeper
+    ports:
+      - 9092:9092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: INTERNAL://:29092,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka1:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      #https://github.com/wurstmeister/kafka-docker/issues/553
+
+ # kafka single node     
+  kafka2:
+    image: wurstmeister/kafka:latest
+    restart: "no"
+    links:
+      - zookeeper
+    ports:
+      - 9093:9093
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: INTERNAL://:29093,EXTERNAL://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka2:29093,EXTERNAL://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      #https://github.com/wurstmeister/kafka-docker/issues/553
+
+#kafdrop for topic/msg visualization
+  kafdrop:
+    image: obsidiandynamics/kafdrop
+    restart: "no"
+    environment:
+      KAFKA_BROKERCONNECT: "kafka1:29092,kafka2:29093"
+      # JVM_OPTS: "-Xms16M -Xmx512M -Xss180K -XX:-TieredCompilation -XX:+UseStringDeduplication -noverify"
+    ports:
+      - 9000:9000
+    depends_on:
+      - kafka1
+      - kafka2
+
+  postgres:
+      image: postgres:15
+      environment:
+        POSTGRES_USER: airflow
+        POSTGRES_PASSWORD: airflow
+        POSTGRES_DB: airflow
+      ports:
+        - "5432:5432"
+
+  airflow:
+      image: apache/airflow:2.9.3
+        # context: .
+        # dockerfile: Dockerfile
+      restart: always
+      environment:
+        AIRFLOW__CORE__EXECUTOR: LocalExecutor
+        AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+        AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+        JAVA_HOME: /usr/lib/jvm/java-11-openjdk-amd64
+        PATH: $PATH:/usr/lib/jvm/java-11-openjdk-amd64/bin
+      volumes:
+        - ./airflow/dags:/opt/airflow/dags
+        - ./airflow/scripts:/opt/airflow/scripts
+        - ./airflow/logs:/opt/airflow/logs
+        - ./plugins:/opt/airflow/plugins
+        - ./airflow/requirements.txt:/requirements.txt
+      ports:
+        - "8080:8080"
+      command: >
+        bash -c "
+        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 &&
+        export PATH=$PATH:/usr/lib/jvm/java-11-openjdk-amd64/bin &&
+        pip install --no-cache-dir -r /requirements.txt &&
+        airflow db init &&
+        airflow users create --username admin --password admin --firstname Umar --lastname Khattab --role Admin --email admin@example.com &&
+        exec airflow standalone
+        "
+      depends_on:
+        - postgres
+
+
+

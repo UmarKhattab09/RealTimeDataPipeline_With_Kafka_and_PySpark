@@ -1,0 +1,9 @@
+v1
+{"path":"file:///C:/Users/khatt/Desktop/DataEngineering/transformed/part-00000-66c5daa7-3799-4aa4-b49c-3ef04de00350-c000.csv","size":3906,"isDir":false,"modificationTime":1759777571369,"blockReplication":1,"blockSize":33554432,"action":"add"}
+{"path":"file:///C:/Users/khatt/Desktop/DataEngineering/transformed/part-00001-5f18de4d-558b-45df-a133-84fa2d48b208-c000.csv","size":3901,"isDir":false,"modificationTime":1759777571382,"blockReplication":1,"blockSize":33554432,"action":"add"}
+{"path":"file:///C:/Users/khatt/Desktop/DataEngineering/transformed/part-00002-2c9c2fb6-7367-4d17-9823-4f730d9e0ca3-c000.csv","size":3406,"isDir":false,"modificationTime":1759777571394,"blockReplication":1,"blockSize":33554432,"action":"add"}
+{"path":"file:///C:/Users/khatt/Desktop/DataEngineering/transformed/part-00003-43559645-9141-4b74-a2b4-23669a181b3d-c000.csv","size":2002,"isDir":false,"modificationTime":1759777571374,"blockReplication":1,"blockSize":33554432,"action":"add"}
+{"path":"file:///C:/Users/khatt/Desktop/DataEngineering/transformed/part-00004-743c2d02-17ba-4869-92a7-a549e21b9a15-c000.csv","size":1372,"isDir":false,"modificationTime":1759777571425,"blockReplication":1,"blockSize":33554432,"action":"add"}
+{"path":"file:///C:/Users/khatt/Desktop/DataEngineering/transformed/part-00005-247d2291-3a85-4d2c-b460-4464756f7e7b-c000.csv","size":1364,"isDir":false,"modificationTime":1759777571490,"blockReplication":1,"blockSize":33554432,"action":"add"}
+{"path":"file:///C:/Users/khatt/Desktop/DataEngineering/transformed/part-00006-3ff3719c-1a19-4653-8231-1d5787308435-c000.csv","size":1350,"isDir":false,"modificationTime":1759777571374,"blockReplication":1,"blockSize":33554432,"action":"add"}
+{"path":"file:///C:/Users/khatt/Desktop/DataEngineering/transformed/part-00007-e7743bb8-adb1-4026-a556-18aad900149d-c000.csv","size":845,"isDir":false,"modificationTime":1759777571434,"blockReplication":1,"blockSize":33554432,"action":"add"}
