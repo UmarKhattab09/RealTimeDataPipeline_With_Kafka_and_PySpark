@@ -1,10 +1,10 @@
-# File: dags/spark_etl_dag.py
+from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
-from datetime import datetime, timedelta
 
-# Default arguments for DAG
+SCRIPTS = "/opt/airflow/scripts"
+
 default_args = {
     'owner': 'Umar',
     'depends_on_past': False,
@@ -12,32 +12,35 @@ default_args = {
     'email_on_failure': False,  # set True if you configure SMTP
     'email_on_retry': False,
     'retries': 1,
-    'retry_delay': timedelta(minutes=5),
+    'retry_delay': timedelta(minutes=1),
 }
 
-# DAG definition
-dag = DAG(
+with DAG(
     'spark_etl_dag',
     default_args=default_args,
-    description='Local testing DAG: producer + transform',
-    schedule_interval='*/1 * * * *',  # every minute for testing
+    description='Click events: producer -> Kafka -> raw CSV -> transformed CSV',
+    schedule_interval='*/5 * * * *',
     start_date=datetime(2025, 10, 6),
-    catchup=False
-)
+    catchup=False,
+    max_active_runs=1,  # the Spark jobs share one checkpoint, so runs must not overlap
+) as dag:
 
-# Task: run producer.py (simulate data)
-run_producer = BashOperator(
-    task_id='run_producer',
-    bash_command='python "/opt/airflow/scripts/producer.py"',
-    dag=dag
-)
+    # Send a fixed batch of events so the task finishes.
+    run_producer = BashOperator(
+        task_id='run_producer',
+        bash_command=f'python {SCRIPTS}/producer.py --num-events 30 --interval 0.5',
+    )
 
-# Task: run transform.py (batch ETL)
-run_transform = BashOperator(
-    task_id='run_transform',
-    bash_command='python "/opt/airflow/scripts/transform_stream.py"',
-    dag=dag
-)
+    # Drain everything new from Kafka into data/raw, then exit.
+    run_spark_stream = BashOperator(
+        task_id='run_spark_stream',
+        bash_command=f'python {SCRIPTS}/spark_stream.py --once',
+    )
 
-# Set dependencies: producer first, then transform
-run_producer >> run_transform
+    # Rebuild the cleaned events and aggregates in data/transformed.
+    run_transform = BashOperator(
+        task_id='run_transform',
+        bash_command=f'python {SCRIPTS}/transform.py',
+    )
+
+    run_producer >> run_spark_stream >> run_transform
