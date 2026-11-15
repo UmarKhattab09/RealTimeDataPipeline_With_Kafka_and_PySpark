@@ -1,2 +1,0 @@
-event_id,user_id,page,timestamp,kafka_timestamp,processing_time
-27b3582d-23e3-40a4-873a-9625d673ba6c,36,/checkout,2025-10-06T17:09:29,2025-10-06T17:09:29.668-05:00,2025-10-06T17:09:30.022-05:00

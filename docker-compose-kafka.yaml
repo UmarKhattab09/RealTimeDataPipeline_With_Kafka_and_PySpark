@@ -1,5 +1,4 @@
 #https://github.com/skylvr1289/sample_kafka
-version: '2'
 services:
 # Zookeeper, single node
   zookeeper:
@@ -60,44 +59,48 @@ services:
       - kafka2
 
   postgres:
-      image: postgres:15
-      environment:
-        POSTGRES_USER: airflow
-        POSTGRES_PASSWORD: airflow
-        POSTGRES_DB: airflow
-      ports:
-        - "5432:5432"
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
 
+  # Airflow with Java + PySpark baked in (see Dockerfile). UI: http://localhost:8080 (admin / admin)
   airflow:
-      image: apache/airflow:2.9.3
-        # context: .
-        # dockerfile: Dockerfile
-      restart: always
-      environment:
-        AIRFLOW__CORE__EXECUTOR: LocalExecutor
-        AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
-        AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-        JAVA_HOME: /usr/lib/jvm/java-11-openjdk-amd64
-        PATH: $PATH:/usr/lib/jvm/java-11-openjdk-amd64/bin
-      volumes:
-        - ./airflow/dags:/opt/airflow/dags
-        - ./airflow/scripts:/opt/airflow/scripts
-        - ./airflow/logs:/opt/airflow/logs
-        - ./plugins:/opt/airflow/plugins
-        - ./airflow/requirements.txt:/requirements.txt
-      ports:
-        - "8080:8080"
-      command: >
-        bash -c "
-        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 &&
-        export PATH=$PATH:/usr/lib/jvm/java-11-openjdk-amd64/bin &&
-        pip install --no-cache-dir -r /requirements.txt &&
-        airflow db init &&
-        airflow users create --username admin --password admin --firstname Umar --lastname Khattab --role Admin --email admin@example.com &&
-        exec airflow standalone
-        "
-      depends_on:
-        - postgres
-
-
-
+    build: .
+    restart: always
+    # On Linux, put AIRFLOW_UID=$(id -u) in a .env file so the container can write to ./data and ./airflow/logs
+    user: "${AIRFLOW_UID:-50000}:0"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      # Inside the compose network the brokers are reached by service name, not localhost
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29093
+      PIPELINE_DATA_DIR: /opt/airflow/data
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/scripts:/opt/airflow/scripts
+      - ./airflow/logs:/opt/airflow/logs
+      - ./data:/opt/airflow/data
+    ports:
+      - "8080:8080"
+    command: >
+      bash -c "
+      airflow db migrate &&
+      (airflow users create --username admin --password admin --firstname Umar --lastname Khattab --role Admin --email admin@example.com || true) &&
+      exec airflow standalone
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka1:
+        condition: service_started
+      kafka2:
+        condition: service_started

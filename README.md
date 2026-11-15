@@ -1,60 +1,80 @@
 # Real-Time Data Ingestion and Transformation Pipeline
 
 ## Project Overview
-This project demonstrates a complete real-time data pipeline using **Apache Kafka**, **PySpark Streaming**, and **Apache Airflow**. It allows ingestion of streaming data, processing it in near real-time, and saving transformed results to CSV for further analysis.
+A small real-time clickstream pipeline built with **Apache Kafka**, **PySpark Structured Streaming** and **Apache Airflow**.
 
-The pipeline is structured to simulate a real-world ETL scenario:  
-1. **Producer** generates streaming data (simulating live data from external APIs).  
-2. **PySpark Streaming** consumes the data, applies transformations, and writes the results to CSV files.  
-3. **Airflow DAGs** are configured to orchestrate tasks such as running producers and transformation scripts.
-
----
+1. **Producer** sends fake website click events (JSON) to the Kafka topic `click_events`.
+2. **Spark Structured Streaming** reads the topic and appends the events to CSV files in `data/raw/`.
+3. **Transform job** cleans the raw events and builds aggregates in `data/transformed/`.
+4. **Airflow** runs the three steps in order every 5 minutes.
 
 ## Architecture
-Producer (Kafka) --> Kafka Topics --> PySpark Streaming --> Transformations --> CSV Output
-|
-v
-Airflow DAGs (Orchestration)
+```
+producer.py --> Kafka (click_events) --> spark_stream.py --> data/raw/*.csv --> transform.py --> data/transformed/
+                                                                                                  ├── clean_events/
+        Airflow DAG `spark_etl_dag`:                                                              ├── page_views_per_min/
+        run_producer >> run_spark_stream >> run_transform                                         └── user_activity/
+```
 
+## Repository Layout
+| Path | What it is |
+|---|---|
+| `docker-compose-kafka.yaml` | Zookeeper, 2 Kafka brokers, Kafdrop, Postgres and Airflow |
+| `Dockerfile` | Airflow image with Java, PySpark and the Spark-Kafka connector |
+| `airflow/dags/dags.py` | The `spark_etl_dag` DAG |
+| `airflow/scripts/config.py` | Shared settings (Kafka address, topic, data folders), read from environment variables |
+| `airflow/scripts/producer.py` | Kafka producer for fake click events |
+| `airflow/scripts/spark_stream.py` | Kafka -> raw CSV streaming job |
+| `airflow/scripts/transform.py` | Raw CSV -> cleaned events and aggregates |
+| `data/` | Pipeline output (created at run time, not committed) |
 
----
+## What the Transform Produces
+- **`clean_events/`** – typed and de-duplicated events, with `event_date` and `ingest_lag_seconds` (time between Kafka receiving the event and Spark processing it).
+- **`page_views_per_min/`** – views and unique users per page for each 1-minute window.
+- **`user_activity/`** – per user: total events, distinct pages, first/last seen, and whether they reached `/checkout`.
+
+The transform is a batch job that rebuilds its outputs from everything in `data/raw/`, so it is safe to run again and again.
+
+## Run Everything with Docker (Airflow orchestrates)
+```bash
+docker compose -f docker-compose-kafka.yaml up -d --build
+```
+- Airflow UI: http://localhost:8080 (user `admin`, password `admin`). Switch on `spark_etl_dag`; it then runs every 5 minutes.
+- Kafdrop (browse topics and messages): http://localhost:9000
+- Output appears in `./data/` on your machine.
+
+On Linux, create a `.env` file first so the container can write to `./data` and `./airflow/logs`:
+```bash
+echo "AIRFLOW_UID=$(id -u)" > .env
+```
+
+## Run the Scripts Locally (without Airflow)
+Requirements: Python, Java 11 or 17, and `pip install -r airflow/requirements.txt`.
+
+```bash
+docker compose -f docker-compose-kafka.yaml up -d zookeeper kafka1 kafka2 kafdrop
+cd airflow/scripts
+python producer.py            # sends an event every 2 seconds until Ctrl+C
+python spark_stream.py        # in a second terminal: Kafka -> data/raw, runs until Ctrl+C
+python transform.py           # builds data/transformed from data/raw
+```
+
+Useful options:
+- `python producer.py --num-events 30 --interval 0.5` – send a fixed number of events and exit.
+- `python spark_stream.py --once` – process everything new in Kafka and exit.
+
+## Configuration
+All settings have defaults for local runs and can be overridden with environment variables:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka address (`kafka1:29092,kafka2:29093` inside Docker) |
+| `KAFKA_TOPIC` | `click_events` | Topic to produce to and read from |
+| `PIPELINE_DATA_DIR` | `<repo>/data` | Where raw data, transformed data and checkpoints are written |
+| `SPARK_KAFKA_PACKAGE` | `org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1` | Spark-Kafka connector; must match the PySpark version |
 
 ## Technologies Used
-- **Apache Kafka** – Messaging system for real-time data ingestion  
-- **PySpark Streaming** – Real-time data processing and transformation  
-- **Apache Airflow** – Orchestration and workflow automation  
-- **Docker & Docker Compose** – Containerized environment for reproducibility  
-- **Python** – Scripting for producers, transformations, and orchestration  
-- **CSV** – Storage of processed output  
-
----
-
-## Key Features
-- Real-time data ingestion and processing  
-- Streaming transformations using PySpark  
-- Fault-tolerant setup using Spark checkpoints  
-- Scalable architecture supporting multiple Kafka brokers  
-- Attempted workflow orchestration using Airflow (automation in progress)  
-
----
-
-## How to Run
-1. Start Kafka and Zookeeper using Docker Compose.  
-2. Run the Python producer to generate data.  
-3. Start the PySpark streaming job to consume and transform data.  
-4. Optionally, start Airflow to orchestrate DAGs (paths must be configured inside container).
-
----
-
-## Notes
-- Currently, the Airflow DAG is set up but automation is limited due to container environment path issues.  
-- The pipeline is fully functional locally for development and testing purposes.
-
-
-## How To Run
-- `docker compose -f "docker-compose-kafka.yaml" up -d
-- python producer.py
-- python spark/spark_stream.py
-- python consumer.py (optional)
-- python spark/transform.py
-
+- **Apache Kafka** – real-time message ingestion
+- **PySpark Structured Streaming** – stream processing with checkpointed Kafka offsets
+- **Apache Airflow** – orchestration
+- **Docker & Docker Compose** – reproducible environment
