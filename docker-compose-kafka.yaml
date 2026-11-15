@@ -26,6 +26,8 @@ services:
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka1:29092,EXTERNAL://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      # Consumer groups store their position in an internal topic; its default of 3 copies needs 3 brokers
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
       #https://github.com/wurstmeister/kafka-docker/issues/553
 
  # kafka single node     
@@ -43,6 +45,8 @@ services:
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka2:29093,EXTERNAL://localhost:9093
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      # Consumer groups store their position in an internal topic; its default of 3 copies needs 3 brokers
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
       #https://github.com/wurstmeister/kafka-docker/issues/553
 
 #kafdrop for topic/msg visualization
@@ -58,6 +62,55 @@ services:
       - kafka1
       - kafka2
 
+  # --- The "website": producer + the small programs that react to events -------------
+  # They run all the time, so they are plain services, not Airflow tasks.
+  producer:
+    build: ./services
+    command: python producer.py
+    restart: on-failure
+    environment: &kafka-env
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29093
+    depends_on: [kafka1, kafka2]
+
+  notification-service:   # user_signed_in -> sign-in alert
+    build: ./services
+    command: python notification_service.py
+    restart: on-failure
+    environment: *kafka-env
+    depends_on: [kafka1, kafka2]
+
+  email-service:          # order_placed -> confirmation email
+    build: ./services
+    command: python email_service.py
+    restart: on-failure
+    environment: *kafka-env
+    depends_on: [kafka1, kafka2]
+
+  fulfillment-service:    # payment_completed -> ship order or ask for retry
+    build: ./services
+    command: python fulfillment_service.py
+    restart: on-failure
+    environment: *kafka-env
+    depends_on: [kafka1, kafka2]
+
+  # --- Analytics database: Spark writes the raw and analytics tables here ----------
+  # From your machine: psql -h localhost -p 5433 -U warehouse warehouse  (password: warehouse)
+  warehouse:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: warehouse
+      POSTGRES_PASSWORD: warehouse
+      POSTGRES_DB: warehouse
+    ports:
+      - "5433:5432"
+    volumes:
+      - warehouse_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "warehouse"]
+      interval: 5s
+      retries: 10
+
+  # --- Airflow and its own metadata database --------------------------------------
   postgres:
     image: postgres:15
     environment:
@@ -84,6 +137,7 @@ services:
       # Inside the compose network the brokers are reached by service name, not localhost
       KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29093
       PIPELINE_DATA_DIR: /opt/airflow/data
+      WAREHOUSE_JDBC_URL: jdbc:postgresql://warehouse:5432/warehouse
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/scripts:/opt/airflow/scripts
@@ -100,7 +154,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      warehouse:
+        condition: service_healthy
       kafka1:
         condition: service_started
       kafka2:
         condition: service_started
+
+volumes:
+  warehouse_data:
